@@ -83,6 +83,7 @@ The system includes 8 dedicated evaluation suites:
 ## 📂 Project Structure
 
 ```text
+├── Videos/             # Demo videos
 ├── backend/            # FastAPI source code
 ├── frontend/           # Next.js 14 source code
 ├── evaluation/         # Automated test suites & test data
