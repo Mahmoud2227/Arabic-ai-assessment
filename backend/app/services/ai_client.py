@@ -36,28 +36,33 @@ async def stream_chat(
     remote_conversation_id = ""
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=120.0, http1=True, http2=False) as client:
             async with client.stream("POST", CHAT_API_URL, json=payload, headers=headers) as response:
                 response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data_str = line[5:].strip()
-                    if not data_str or data_str == "[DONE]":
-                        continue
-                    try:
-                        data = json.loads(data_str)
-                        choices = data.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                full_response += content
-                                yield content
+                buffer = b""
+                async for chunk in response.aiter_bytes():
+                    buffer += chunk
+                    while b"\n" in buffer:
+                        line_bytes, buffer = buffer.split(b"\n", 1)
+                        line = line_bytes.decode("utf-8", errors="replace")
+                        if not line.startswith("data:"):
+                            continue
+                        data_str = line[5:].strip()
+                        if not data_str or data_str == "[DONE]":
+                            continue
+                        try:
+                            data = json.loads(data_str)
+                            choices = data.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                content = delta.get("content", "")
+                                if content:
+                                    full_response += content
+                                    yield content
 
-                    except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse SSE data: {data_str}")
-                        continue
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse SSE data: {data_str}")
+                            continue
                 
                 logger.info(f"AI stream finished for user {user_id} ({len(full_response)} chars)")
                 # Yield metadata as a special JSON event (kept for backend _stream_and_save compat)

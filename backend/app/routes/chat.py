@@ -109,14 +109,23 @@ async def chat_text(
     # Save user message
     await _save_message(db, req.conversation_id, "user", req.query, "text")
     logger.info(f"Text chat: user={current_user.id}, conv={req.conversation_id}, query={req.query[:50]}")
+    
+    # Pre-yield an empty space and padding to flush buffers
+    async def chat_wrapper():
+        yield f": {' ' * 4096}\n\n"
+        yield f"data: {json.dumps({'content': ''})}\n\n"
+        async for chunk in _stream_and_save(req.query, req.conversation_id, current_user.id, conv, db):
+            yield chunk
 
     return StreamingResponse(
-        _stream_and_save(req.query, req.conversation_id, current_user.id, conv, db),
+        chat_wrapper(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Encoding": "identity",
         },
     )
 
@@ -154,6 +163,9 @@ async def chat_audio(
 
     # Stream the transcription to the client first, then AI response
     async def audio_stream():
+        # Prime the connection with padding
+        yield f": {' ' * 4096}\n\n"
+        yield f"data: {json.dumps({'content': ''})}\n\n"
         # First, send the transcription so frontend can update the user bubble
         yield f"data: {json.dumps({'transcription': transcription})}\n\n"
 
@@ -165,9 +177,11 @@ async def chat_audio(
         audio_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Encoding": "identity",
         },
     )
 
@@ -204,6 +218,9 @@ async def chat_image(
 
     # Stream caption first, then AI response
     async def image_stream():
+        # Prime the connection with padding
+        yield f": {' ' * 4096}\n\n"
+        yield f"data: {json.dumps({'content': ''})}\n\n"
         yield f"data: {json.dumps({'transcription': caption})}\n\n"
 
         async for chunk in _stream_and_save(caption, conversation_id, current_user.id, conv, db):
@@ -213,8 +230,10 @@ async def chat_image(
         image_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Encoding": "identity",
         },
     )

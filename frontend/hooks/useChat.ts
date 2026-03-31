@@ -83,17 +83,20 @@ export function useChat() {
 
   const updateLastMessage = useCallback((convId: string, msgId: string, chunk: string) => {
     setConversations((prev) =>
-      prev.map((c) =>
-        c.id === convId
-          ? {
-            ...c,
-            messages: c.messages.map((m) =>
-              m.id === msgId ? { ...m, content: m.content + chunk } : m
-            ),
-            lastMessage: (c.messages.find(m => m.id === msgId)?.content + chunk).slice(0, 60),
-          }
-          : c
-      )
+      prev.map((c) => {
+        if (c.id !== convId) return c;
+        const targetMessage = c.messages.find((m) => m.id === msgId);
+        if (!targetMessage) return c;
+
+        const newContent = targetMessage.content + chunk;
+        return {
+          ...c,
+          messages: c.messages.map((m) =>
+            m.id === msgId ? { ...m, content: newContent } : m
+          ),
+          lastMessage: newContent.slice(0, 60),
+        };
+      })
     );
   }, []);
 
@@ -166,12 +169,14 @@ export function useChat() {
 
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done) {
+          console.log("Stream reader done");
+          break;
+        }
 
+        console.log(`Received chunk of ${value.length} bytes`);
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-
-        console.log(lines)
 
         // Keep the last partial line in the buffer
         buffer = lines.pop() || "";
@@ -179,6 +184,8 @@ export function useChat() {
         for (const line of lines) {
           const trimmedLine = line.trim();
           if (!trimmedLine) continue;
+
+          console.log("SSE Line:", trimmedLine);
 
           if (trimmedLine.startsWith("data:")) {
             const dataStr = trimmedLine.slice(5).trim();
